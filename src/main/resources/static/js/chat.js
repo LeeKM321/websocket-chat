@@ -1,7 +1,6 @@
 /**
  * WebSocket 실시간 채팅 클라이언트
- * 
- * SockJS와 STOMP 프로토콜을 사용하여 서버와 실시간 통신합니다.
+ * 대본에 맞게 구현된 백엔드와 연동
  */
 
 'use strict';
@@ -14,10 +13,18 @@ const messageForm = document.querySelector('#messageForm');
 const messageInput = document.querySelector('#message');
 const messageArea = document.querySelector('#messageArea');
 const connectingElement = document.querySelector('.connecting');
+const roomList = document.querySelector('#roomList');
+const onlineUsersList = document.querySelector('#onlineUsersList');
+const createRoomBtn = document.querySelector('#createRoomBtn');
+const createRoomModal = document.querySelector('#createRoomModal');
 
 // 전역 변수
 let stompClient = null;
 let username = null;
+let currentRoomId = null;
+let currentSubscription = null;
+let rooms = [];
+let onlineUsers = new Set();
 
 // 색상 배열 (아바타 배경색)
 const colors = [
@@ -48,7 +55,7 @@ function connect(event) {
         const socket = new SockJS('/ws');
         stompClient = Stomp.over(socket);
         
-        // 디버그 로그 비활성화 (프로덕션에서는 활성화)
+        // 디버그 로그
         stompClient.debug = function(str) {
             console.log('STOMP: ' + str);
         };
@@ -64,20 +71,14 @@ function connect(event) {
 function onConnected() {
     console.log('WebSocket 연결 성공!');
     
-    // 공개 채팅방 구독
-    stompClient.subscribe('/topic/public', onMessageReceived);
-    
-    // 서버에 입장 메시지 전송
-    stompClient.send("/app/chat.addUser",
-        {},
-        JSON.stringify({
-            sender: username,
-            type: 'JOIN'
-        })
-    );
+    // 온라인 사용자 정보 구독
+    stompClient.subscribe('/topic/users', onUserCountUpdate);
     
     // 연결 중 표시 숨기기
     connectingElement.classList.remove('show');
+    
+    // 채팅방 목록 로드
+    loadRooms();
 }
 
 /**
@@ -87,6 +88,129 @@ function onError(error) {
     console.error('WebSocket 연결 실패:', error);
     connectingElement.textContent = '연결에 실패했습니다. 페이지를 새로고침해주세요.';
     connectingElement.style.color = 'red';
+    
+    // 5초 후 재연결 시도
+    setTimeout(() => {
+        console.log('재연결 시도 중...');
+        location.reload();
+    }, 5000);
+}
+
+/**
+ * 채팅방 목록 로드
+ */
+async function loadRooms() {
+    try {
+        const response = await fetch('/api/rooms');
+        rooms = await response.json();
+        
+        console.log('채팅방 목록:', rooms);
+        displayRooms();
+        
+        // 첫 번째 채팅방에 자동 입장
+        if (rooms.length > 0) {
+            joinRoom(rooms[0].id);
+        } else {
+            // 채팅방이 없으면 기본 채팅방 생성
+            await createDefaultRoom();
+        }
+    } catch (error) {
+        console.error('채팅방 목록 로드 실패:', error);
+    }
+}
+
+/**
+ * 기본 채팅방 생성
+ */
+async function createDefaultRoom() {
+    try {
+        const response = await fetch('/api/rooms?name=일반', {
+            method: 'POST'
+        });
+        const room = await response.json();
+        rooms.push(room);
+        displayRooms();
+        joinRoom(room.id);
+    } catch (error) {
+        console.error('기본 채팅방 생성 실패:', error);
+    }
+}
+
+/**
+ * 채팅방 목록 표시
+ */
+function displayRooms() {
+    roomList.innerHTML = '';
+    
+    rooms.forEach(room => {
+        const roomElement = document.createElement('div');
+        roomElement.className = 'room-item';
+        roomElement.dataset.roomId = room.id;
+        
+        roomElement.innerHTML = `
+            <div class="room-item-name">${room.name}</div>
+            <div class="room-item-info">${room.userCount}명 접속 중</div>
+        `;
+        
+        roomElement.addEventListener('click', () => joinRoom(room.id));
+        roomList.appendChild(roomElement);
+    });
+}
+
+/**
+ * 채팅방 입장
+ */
+function joinRoom(roomId) {
+    console.log('채팅방 입장 시도:', roomId);
+    
+    // 이전 구독 해제
+    if (currentSubscription) {
+        currentSubscription.unsubscribe();
+        console.log('이전 구독 해제');
+    }
+    
+    // 메시지 영역 초기화
+    messageArea.innerHTML = '';
+    
+    // 현재 채팅방 설정
+    currentRoomId = roomId;
+    
+    // 채팅방 정보 가져오기
+    const room = rooms.find(r => r.id === roomId);
+    if (room) {
+        document.querySelector('#currentRoomName').textContent = '💬 ' + room.name;
+    }
+    
+    // 채팅방 구독 (대본 방식: /topic/room.{roomId})
+    const destination = '/topic/room.' + roomId;
+    console.log('구독 시작:', destination);
+    currentSubscription = stompClient.subscribe(destination, onMessageReceived);
+    
+    // 활성 채팅방 표시
+    document.querySelectorAll('.room-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.dataset.roomId === roomId) {
+            item.classList.add('active');
+        }
+    });
+    
+    // 입장 메시지 전송 (대본 방식: /app/chat.addUser/{roomId})
+    sendRoomJoinMessage(roomId);
+}
+
+/**
+ * 채팅방 입장 메시지 전송
+ */
+function sendRoomJoinMessage(roomId) {
+    const joinMessage = {
+        type: 'JOIN',
+        sender: username,
+        content: username + '님이 입장했습니다.'
+    };
+    
+    const destination = "/app/chat.addUser/" + roomId;
+    console.log('입장 메시지 전송:', destination, joinMessage);
+    stompClient.send(destination, {}, JSON.stringify(joinMessage));
 }
 
 /**
@@ -97,15 +221,17 @@ function sendMessage(event) {
     
     const messageContent = messageInput.value.trim();
     
-    if (messageContent && stompClient) {
+    if (messageContent && stompClient && currentRoomId) {
         const chatMessage = {
             sender: username,
             content: messageContent,
             type: 'CHAT'
         };
         
-        // 서버로 메시지 전송
-        stompClient.send("/app/chat.sendMessage", {}, JSON.stringify(chatMessage));
+        // 대본 방식: /app/chat.sendMessage/{roomId}
+        const destination = "/app/chat.sendMessage/" + currentRoomId;
+        console.log('메시지 전송:', destination, chatMessage);
+        stompClient.send(destination, {}, JSON.stringify(chatMessage));
         
         // 입력 필드 초기화
         messageInput.value = '';
@@ -118,16 +244,37 @@ function sendMessage(event) {
 function onMessageReceived(payload) {
     const message = JSON.parse(payload.body);
     
+    console.log('메시지 수신:', message);
+    
     const messageElement = document.createElement('li');
     
     if (message.type === 'JOIN' || message.type === 'LEAVE') {
         // 입장/퇴장 메시지
         messageElement.classList.add('event-message');
-        const textElement = document.createTextNode(message.content);
+        
+        const emoji = message.type === 'JOIN' ? '👋' : '👋';
+        const icon = document.createElement('span');
+        icon.classList.add('event-icon');
+        icon.textContent = emoji;
+        
+        const textElement = document.createElement('span');
+        textElement.textContent = ' ' + message.content;
+        
+        const timeElement = document.createElement('span');
+        timeElement.classList.add('event-time');
+        timeElement.textContent = ' • ' + formatTime(message.timestamp);
+        
+        messageElement.appendChild(icon);
         messageElement.appendChild(textElement);
+        messageElement.appendChild(timeElement);
     } else {
         // 일반 채팅 메시지
         messageElement.classList.add('chat-message');
+        
+        // 내가 보낸 메시지인지 확인
+        if (message.sender === username) {
+            messageElement.classList.add('my-message');
+        }
         
         // 아바타
         const avatarElement = document.createElement('div');
@@ -165,6 +312,46 @@ function onMessageReceived(payload) {
     
     messageArea.appendChild(messageElement);
     messageArea.scrollTop = messageArea.scrollHeight;
+    
+    // 알림음 효과
+    if (message.sender !== username) {
+        playNotificationSound();
+    }
+}
+
+/**
+ * 온라인 사용자 수 업데이트
+ */
+function onUserCountUpdate(payload) {
+    const userInfo = JSON.parse(payload.body);
+    console.log('온라인 사용자 정보:', userInfo);
+    
+    // 헤더에 온라인 사용자 수 표시
+    document.querySelector('#onlineCount').textContent = userInfo.count;
+    
+    // 온라인 사용자 목록 업데이트
+    onlineUsers = new Set(userInfo.users);
+    displayOnlineUsers();
+}
+
+/**
+ * 온라인 사용자 목록 표시
+ */
+function displayOnlineUsers() {
+    onlineUsersList.innerHTML = '';
+    
+    onlineUsers.forEach(user => {
+        if (user === username) return; // 자기 자신 제외
+        
+        const userElement = document.createElement('div');
+        userElement.className = 'online-user-item';
+        userElement.innerHTML = `
+            <span class="online-indicator"></span>
+            <span>${user}</span>
+        `;
+        
+        onlineUsersList.appendChild(userElement);
+    });
 }
 
 /**
@@ -190,6 +377,79 @@ function formatTime(timestamp) {
 }
 
 /**
+ * 알림음 재생
+ */
+function playNotificationSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+    } catch (error) {
+        console.log('알림음 재생 실패:', error);
+    }
+}
+
+/**
+ * 채팅방 생성 모달 열기
+ */
+function openCreateRoomModal() {
+    createRoomModal.classList.remove('hidden');
+}
+
+/**
+ * 채팅방 생성 모달 닫기
+ */
+function closeCreateRoomModal() {
+    createRoomModal.classList.add('hidden');
+    document.querySelector('#roomName').value = '';
+}
+
+/**
+ * 채팅방 생성
+ */
+async function createRoom() {
+    const name = document.querySelector('#roomName').value.trim();
+    
+    if (!name) {
+        alert('채팅방 이름을 입력해주세요.');
+        return;
+    }
+    
+    try {
+        // 대본 방식: POST /api/rooms?name=xxx
+        const response = await fetch('/api/rooms?name=' + encodeURIComponent(name), {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            const newRoom = await response.json();
+            console.log('채팅방 생성 성공:', newRoom);
+            rooms.push(newRoom);
+            displayRooms();
+            closeCreateRoomModal();
+            
+            // 새로 만든 채팅방으로 입장
+            joinRoom(newRoom.id);
+        }
+    } catch (error) {
+        console.error('채팅방 생성 실패:', error);
+        alert('채팅방 생성에 실패했습니다.');
+    }
+}
+
+/**
  * 페이지 종료 시 WebSocket 연결 해제
  */
 window.addEventListener('beforeunload', function() {
@@ -201,3 +461,16 @@ window.addEventListener('beforeunload', function() {
 // 이벤트 리스너 등록
 usernameForm.addEventListener('submit', connect, true);
 messageForm.addEventListener('submit', sendMessage, true);
+
+// 채팅방 생성 관련 이벤트
+createRoomBtn.addEventListener('click', openCreateRoomModal);
+document.querySelector('.modal-close').addEventListener('click', closeCreateRoomModal);
+document.querySelector('#cancelCreateRoom').addEventListener('click', closeCreateRoomModal);
+document.querySelector('#confirmCreateRoom').addEventListener('click', createRoom);
+
+// 모달 외부 클릭 시 닫기
+createRoomModal.addEventListener('click', function(e) {
+    if (e.target === createRoomModal) {
+        closeCreateRoomModal();
+    }
+});

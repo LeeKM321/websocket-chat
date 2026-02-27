@@ -1,16 +1,24 @@
 package com.codeit.chat.controller;
 
 import com.codeit.chat.model.ChatMessage;
+import com.codeit.chat.service.ChatRoomService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 @Controller
 @Slf4j
+@RequiredArgsConstructor
 public class ChatController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+    private final ChatRoomService chatRoomService;
 
     /**
      * 일반 채팅 메시지 전송 처리
@@ -33,6 +41,21 @@ public class ChatController {
         return chatMessage;
     }
 
+    @MessageMapping("/chat.sendMessage/{roomId}")
+    @SendTo("/topic/room.{roomId}")
+    public ChatMessage sendMessageToRoom(@DestinationVariable String roomId, @Payload ChatMessage chatMessage) {
+        log.info("메시지 수신 - 방: {} 발신자: {}, 내용: {}",
+                roomId,
+                chatMessage.getSender(),
+                chatMessage.getContent());
+
+        chatMessage.setTimestamp(System.currentTimeMillis());
+
+//        messagingTemplate.convertAndSend("/topic/room." + roomId);
+
+        return chatMessage;
+    }
+
     @MessageMapping("/chat.addUser")
     @SendTo("/topic/public")
     public ChatMessage addUser(@Payload ChatMessage chatMessage,
@@ -49,6 +72,25 @@ public class ChatController {
         return ChatMessage.createJoinMessage(chatMessage.getSender());
     }
 
+    @MessageMapping("/chat.addUser/{roomId}")
+    @SendTo("/topic/public")
+    public ChatMessage addUserToRoom(@DestinationVariable String roomId, @Payload ChatMessage chatMessage,
+                               SimpMessageHeaderAccessor headerAccessor) {
+
+        // 세션에 사용자 이름과 방 ID를 저장
+        headerAccessor.getSessionAttributes().put("username", chatMessage.getSender());
+        headerAccessor.getSessionAttributes().put("roomId", roomId);
+
+        // 채팅방 입장 처리
+        chatRoomService.enterRoom(roomId);
+
+        log.info("사용자 입장 - 방: {} 이름: {}",
+                roomId,
+                chatMessage.getSender());
+
+        // 입장 메시지 생성
+        return ChatMessage.createJoinMessage(chatMessage.getSender());
+    }
 
 
 }

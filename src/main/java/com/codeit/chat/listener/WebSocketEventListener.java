@@ -1,6 +1,7 @@
 package com.codeit.chat.listener;
 
 import com.codeit.chat.model.ChatMessage;
+import com.codeit.chat.service.ChatRoomService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -17,6 +18,7 @@ public class WebSocketEventListener {
 
     // 메시지를 직접 전송할 수 있는 객체
     private final SimpMessagingTemplate messagingTemplate;
+    private final ChatRoomService chatRoomService;
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
@@ -31,13 +33,16 @@ public class WebSocketEventListener {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
 
         String username = (String) headerAccessor.getSessionAttributes().get("username");
+        String roomId = (String) headerAccessor.getSessionAttributes().get("roomId");
 
         if (username != null) {
-            log.info("사용자 퇴장 - 이름: {}", username);
+            log.info("사용자 퇴장 - 방:{} 이름: {}", roomId, username);
+
+            chatRoomService.leaveRoom(roomId);
 
             // 퇴장 메시지 생성 및 브로드캐스트
             ChatMessage leaveMessage = ChatMessage.createLeaveMessage(username);
-            messagingTemplate.convertAndSend("/topic/public", leaveMessage);
+            messagingTemplate.convertAndSend("/topic/room." + roomId, leaveMessage);
         }
 
     }

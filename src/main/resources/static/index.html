@@ -35,35 +35,82 @@
 
         <!-- 채팅 화면 -->
         <div id="chat-page" class="hidden">
-            <div class="chat-container">
-                <div class="chat-header">
-                    <h2>💬 실시간 채팅</h2>
-                    <p class="connected-users">
-                        <span id="connected-user-fullname"></span>님으로 접속 중
-                    </p>
-                </div>
-                
-                <div class="connecting">
-                    <div class="spinner"></div>
-                    <p>연결 중...</p>
-                </div>
-
-                <ul id="messageArea"></ul>
-
-                <form id="messageForm" name="messageForm">
-                    <div class="form-group">
-                        <div class="input-group">
-                            <input 
-                                type="text" 
-                                id="message" 
-                                placeholder="메시지를 입력하세요..." 
-                                autocomplete="off" 
-                                class="form-control"
-                            />
-                            <button type="submit" class="primary">전송</button>
+            <div class="chat-layout">
+                <!-- 채팅방 목록 사이드바 -->
+                <div class="chat-sidebar">
+                    <div class="sidebar-header">
+                        <h3>📁 채팅방</h3>
+                        <button id="createRoomBtn" class="btn-icon" title="채팅방 만들기">➕</button>
+                    </div>
+                    <div id="roomList" class="room-list">
+                        <!-- 채팅방 목록이 여기에 동적으로 추가됩니다 -->
+                    </div>
+                    <div class="sidebar-footer">
+                        <div class="online-users-section">
+                            <h4>👥 온라인 사용자</h4>
+                            <div id="onlineUsersList" class="online-users-list">
+                                <!-- 온라인 사용자 목록 -->
+                            </div>
                         </div>
                     </div>
-                </form>
+                </div>
+
+                <!-- 채팅 메인 영역 -->
+                <div class="chat-main">
+                    <div class="chat-container">
+                        <div class="chat-header">
+                            <div>
+                                <h2 id="currentRoomName">💬 채팅방</h2>
+                                <p class="connected-users">
+                                    <span id="connected-user-fullname"></span>님으로 접속 중
+                                    <span style="color: #4caf50;">● <span id="onlineCount">0</span>명 온라인</span>
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="connecting">
+                            <div class="spinner"></div>
+                            <p>연결 중...</p>
+                        </div>
+
+                        <ul id="messageArea"></ul>
+
+                        <form id="messageForm" name="messageForm">
+                            <div class="form-group">
+                                <div class="input-group">
+                                    <input 
+                                        type="text" 
+                                        id="message" 
+                                        placeholder="메시지를 입력하세요..." 
+                                        autocomplete="off" 
+                                        class="form-control"
+                                    />
+                                    <button type="submit" class="primary">전송</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 채팅방 생성 모달 -->
+        <div id="createRoomModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>새 채팅방 만들기</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="roomName">채팅방 이름</label>
+                        <input type="text" id="roomName" class="form-control" placeholder="예: 프로젝트 회의">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancelCreateRoom" class="btn-secondary">취소</button>
+                    <button id="confirmCreateRoom" class="primary">만들기</button>
+                </div>
             </div>
         </div>
     </div>
