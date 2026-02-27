@@ -1,6 +1,7 @@
 package com.codeit.chat.controller;
 
 import com.codeit.chat.model.ChatMessage;
+import com.codeit.chat.model.PrivateMessage;
 import com.codeit.chat.service.ChatRoomService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -90,6 +91,16 @@ public class ChatController {
 
         // 입장 메시지 생성
         return ChatMessage.createJoinMessage(chatMessage.getSender());
+    }
+
+    @MessageMapping("/chat.private")
+    public void sendPrivateMessage(@Payload PrivateMessage message, SimpMessageHeaderAccessor headerAccessor) {
+        String sender = (String) headerAccessor.getSessionAttributes().get("username");
+        message.setSender(sender);
+        message.setTimestamp(System.currentTimeMillis());
+
+        // 실제 목적지: /user/김철수/queue/messages
+        messagingTemplate.convertAndSendToUser(message.getRecipient(), "/queue/message", message);
     }
 
 
