@@ -1,1 +1,12 @@
-spring.application.name=websocket-chat
+spring:
+  application:
+    name: websocket-chat
+server:
+  port: 8080
+
+logging:
+  level:
+    root: info
+    com.codeit.chat: debug
+    org.springframework.web.socket: debug
+    org.springframework.messaging: debug
