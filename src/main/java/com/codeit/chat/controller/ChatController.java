@@ -3,6 +3,7 @@ package com.codeit.chat.controller;
 import com.codeit.chat.model.ChatMessage;
 import com.codeit.chat.model.PrivateMessage;
 import com.codeit.chat.service.ChatRoomService;
+import com.codeit.chat.service.OnlineUserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -13,6 +14,10 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.security.Principal;
+import java.util.HashMap;
+import java.util.Map;
+
 @Controller
 @Slf4j
 @RequiredArgsConstructor
@@ -20,6 +25,7 @@ public class ChatController {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatRoomService chatRoomService;
+    private final OnlineUserService onlineUserService;
 
     /**
      * 일반 채팅 메시지 전송 처리
@@ -74,9 +80,9 @@ public class ChatController {
     }
 
     @MessageMapping("/chat.addUser/{roomId}")
-    @SendTo("/topic/public")
+    @SendTo("/topic/room.{roomId}")
     public ChatMessage addUserToRoom(@DestinationVariable String roomId, @Payload ChatMessage chatMessage,
-                               SimpMessageHeaderAccessor headerAccessor) {
+                               SimpMessageHeaderAccessor headerAccessor, Principal principal) {
 
         // 세션에 사용자 이름과 방 ID를 저장
         headerAccessor.getSessionAttributes().put("username", chatMessage.getSender());
@@ -84,6 +90,10 @@ public class ChatController {
 
         // 채팅방 입장 처리
         chatRoomService.enterRoom(roomId);
+
+        onlineUserService.addUser(chatMessage.getSender(), principal.getName());
+
+        broadcastOnlineUserCount();
 
         log.info("사용자 입장 - 방: {} 이름: {}",
                 roomId,
@@ -99,8 +109,24 @@ public class ChatController {
         message.setSender(sender);
         message.setTimestamp(System.currentTimeMillis());
 
-        // 실제 목적지: /user/김철수/queue/messages
-        messagingTemplate.convertAndSendToUser(message.getRecipient(), "/queue/message", message);
+        String recipientPrincipalId = onlineUserService.getPrincipalId(message.getRecipient());
+
+        if (recipientPrincipalId != null) {
+            messagingTemplate.convertAndSendToUser(recipientPrincipalId, "/queue/messages", message);
+        } else {
+            log.warn("개인 메시지 전송 실패 - 수신자 {}가 오프라인이거나 찾을 수 없음", message.getRecipient());
+        }
+    }
+
+    /**
+     * 온라인 사용자 수를 모든 클라이언트에게 브로드캐스트
+     */
+    private void broadcastOnlineUserCount() {
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("count", onlineUserService.getOnlineUserCount());
+        userInfo.put("users", onlineUserService.getOnlineUsers());
+
+        messagingTemplate.convertAndSend("/topic/users", userInfo);
     }
 
 

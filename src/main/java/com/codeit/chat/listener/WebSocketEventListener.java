@@ -2,6 +2,7 @@ package com.codeit.chat.listener;
 
 import com.codeit.chat.model.ChatMessage;
 import com.codeit.chat.service.ChatRoomService;
+import com.codeit.chat.service.OnlineUserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -11,6 +12,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -19,6 +23,7 @@ public class WebSocketEventListener {
     // 메시지를 직접 전송할 수 있는 객체
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatRoomService chatRoomService;
+    private final OnlineUserService onlineUserService;
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
@@ -40,13 +45,28 @@ public class WebSocketEventListener {
 
             chatRoomService.leaveRoom(roomId);
 
+            onlineUserService.removeUser(username);
+
             // 퇴장 메시지 생성 및 브로드캐스트
             ChatMessage leaveMessage = ChatMessage.createLeaveMessage(username);
             messagingTemplate.convertAndSend("/topic/room." + roomId, leaveMessage);
+
+            broadcastOnlineUserCount();
         }
 
     }
 
+
+    /**
+     * 온라인 사용자 수를 모든 클라이언트에게 브로드캐스트
+     */
+    private void broadcastOnlineUserCount() {
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("count", onlineUserService.getOnlineUserCount());
+        userInfo.put("users", onlineUserService.getOnlineUsers());
+
+        messagingTemplate.convertAndSend("/topic/users", userInfo);
+    }
 
 }
 

@@ -23,6 +23,8 @@ let stompClient = null;
 let username = null;
 let currentRoomId = null;
 let currentSubscription = null;
+let roomListSubscription = null;
+let privateMessageSubscription = null;
 let rooms = [];
 let onlineUsers = new Set();
 
@@ -73,6 +75,12 @@ function onConnected() {
     
     // 온라인 사용자 정보 구독
     stompClient.subscribe('/topic/users', onUserCountUpdate);
+    
+    // 채팅방 목록 실시간 업데이트 구독
+    roomListSubscription = stompClient.subscribe('/topic/rooms', onRoomListUpdate);
+    
+    // 개인 메시지 구독
+    privateMessageSubscription = stompClient.subscribe('/user/queue/messages', onPrivateMessageReceived);
     
     // 연결 중 표시 숨기기
     connectingElement.classList.remove('show');
@@ -147,6 +155,10 @@ function displayRooms() {
         roomElement.className = 'room-item';
         roomElement.dataset.roomId = room.id;
         
+        if (room.id === currentRoomId) {
+            roomElement.classList.add('active');
+        }
+        
         roomElement.innerHTML = `
             <div class="room-item-name">${room.name}</div>
             <div class="room-item-info">${room.userCount}명 접속 중</div>
@@ -158,9 +170,18 @@ function displayRooms() {
 }
 
 /**
+ * 채팅방 목록 실시간 업데이트
+ */
+function onRoomListUpdate(payload) {
+    rooms = JSON.parse(payload.body);
+    console.log('채팅방 목록 업데이트:', rooms);
+    displayRooms();
+}
+
+/**
  * 채팅방 입장
  */
-function joinRoom(roomId) {
+async function joinRoom(roomId) {
     console.log('채팅방 입장 시도:', roomId);
     
     // 이전 구독 해제
@@ -168,9 +189,6 @@ function joinRoom(roomId) {
         currentSubscription.unsubscribe();
         console.log('이전 구독 해제');
     }
-    
-    // 메시지 영역 초기화
-    messageArea.innerHTML = '';
     
     // 현재 채팅방 설정
     currentRoomId = roomId;
@@ -194,8 +212,38 @@ function joinRoom(roomId) {
         }
     });
     
+    // 메시지 히스토리 로드
+    await loadRoomMessages(roomId);
+    
     // 입장 메시지 전송 (대본 방식: /app/chat.addUser/{roomId})
     sendRoomJoinMessage(roomId);
+}
+
+/**
+ * 채팅방 메시지 히스토리 로드
+ */
+async function loadRoomMessages(roomId) {
+    try {
+        const response = await fetch(`/api/rooms/${roomId}/messages`);
+        const messages = await response.json();
+        
+        console.log(`채팅방 ${roomId} 메시지 히스토리:`, messages);
+        
+        // 메시지 영역 초기화
+        messageArea.innerHTML = '';
+        
+        // 히스토리 메시지 표시
+        messages.forEach(message => {
+            displayMessage(message);
+        });
+        
+        // 스크롤을 맨 아래로
+        messageArea.scrollTop = messageArea.scrollHeight;
+    } catch (error) {
+        console.error('메시지 히스토리 로드 실패:', error);
+        // 실패해도 메시지 영역은 초기화
+        messageArea.innerHTML = '';
+    }
 }
 
 /**
@@ -243,9 +291,14 @@ function sendMessage(event) {
  */
 function onMessageReceived(payload) {
     const message = JSON.parse(payload.body);
-    
     console.log('메시지 수신:', message);
-    
+    displayMessage(message);
+}
+
+/**
+ * 메시지 표시
+ */
+function displayMessage(message) {
     const messageElement = document.createElement('li');
     
     if (message.type === 'JOIN' || message.type === 'LEAVE') {
@@ -313,10 +366,54 @@ function onMessageReceived(payload) {
     messageArea.appendChild(messageElement);
     messageArea.scrollTop = messageArea.scrollHeight;
     
-    // 알림음 효과
+    // 알림음 효과 (내가 보낸 메시지가 아닐 때만)
     if (message.sender !== username) {
         playNotificationSound();
     }
+}
+
+/**
+ * 개인 메시지 수신
+ */
+function onPrivateMessageReceived(payload) {
+    const message = JSON.parse(payload.body);
+    console.log('개인 메시지 수신:', message);
+    
+    // 개인 메시지 알림 표시
+    showPrivateMessageNotification(message);
+}
+
+/**
+ * 개인 메시지 알림 표시
+ */
+function showPrivateMessageNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'private-message-notification';
+    notification.innerHTML = `
+        <div class="notification-header">
+            <strong>💌 ${message.sender}님의 개인 메시지</strong>
+            <button class="notification-close">×</button>
+        </div>
+        <div class="notification-body">${message.content}</div>
+        <div class="notification-time">${formatTime(message.timestamp)}</div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 닫기 버튼 이벤트
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        notification.remove();
+    });
+    
+    // 5초 후 자동 제거
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 5000);
+    
+    // 알림음
+    playNotificationSound();
 }
 
 /**
@@ -347,11 +444,45 @@ function displayOnlineUsers() {
         userElement.className = 'online-user-item';
         userElement.innerHTML = `
             <span class="online-indicator"></span>
-            <span>${user}</span>
+            <span class="user-name">${user}</span>
+            <button class="btn-dm" data-username="${user}" title="개인 메시지 보내기">💌</button>
         `;
+        
+        // 개인 메시지 버튼 이벤트
+        userElement.querySelector('.btn-dm').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openPrivateMessageModal(user);
+        });
         
         onlineUsersList.appendChild(userElement);
     });
+}
+
+/**
+ * 개인 메시지 모달 열기
+ */
+function openPrivateMessageModal(recipient) {
+    const content = prompt(`${recipient}님에게 보낼 메시지를 입력하세요:`);
+    
+    if (content && content.trim()) {
+        sendPrivateMessage(recipient, content.trim());
+    }
+}
+
+/**
+ * 개인 메시지 전송
+ */
+function sendPrivateMessage(recipient, content) {
+    const privateMessage = {
+        recipient: recipient,
+        content: content
+    };
+    
+    console.log('개인 메시지 전송:', privateMessage);
+    stompClient.send('/app/chat.private', {}, JSON.stringify(privateMessage));
+    
+    // 전송 완료 알림
+    alert(`${recipient}님에게 개인 메시지를 보냈습니다!`);
 }
 
 /**
@@ -436,12 +567,10 @@ async function createRoom() {
         if (response.ok) {
             const newRoom = await response.json();
             console.log('채팅방 생성 성공:', newRoom);
-            rooms.push(newRoom);
-            displayRooms();
             closeCreateRoomModal();
             
-            // 새로 만든 채팅방으로 입장
-            joinRoom(newRoom.id);
+            // 서버에서 브로드캐스트로 목록이 업데이트되므로
+            // 여기서는 모달만 닫고 자동으로 목록이 갱신됨
         }
     } catch (error) {
         console.error('채팅방 생성 실패:', error);

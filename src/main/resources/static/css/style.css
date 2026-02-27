@@ -197,6 +197,28 @@ body {
     color: #555;
 }
 
+.online-user-item .user-name {
+    flex: 1;
+}
+
+.online-user-item .btn-dm {
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.online-user-item:hover .btn-dm {
+    opacity: 1;
+}
+
+.online-user-item .btn-dm:hover {
+    transform: scale(1.2);
+}
+
 .online-indicator {
     width: 8px;
     height: 8px;
@@ -592,6 +614,73 @@ button.btn-secondary:hover {
     background: #999;
 }
 
+/* 개인 메시지 알림 */
+.private-message-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    min-width: 300px;
+    max-width: 400px;
+    z-index: 2000;
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #667eea;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.notification-close:hover {
+    color: #333;
+}
+
+.notification-body {
+    padding: 10px 0;
+    color: #333;
+    line-height: 1.5;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.notification-time {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #999;
+    text-align: right;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 768px) {
     .chat-sidebar {
@@ -605,5 +694,12 @@ button.btn-secondary:hover {
     
     .chat-message .message-content {
         max-width: 85%;
+    }
+    
+    .private-message-notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        min-width: auto;
     }
 }

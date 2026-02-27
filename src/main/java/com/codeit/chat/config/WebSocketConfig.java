@@ -29,6 +29,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // 여기에 STOMP 엔드포인트 등록
         registry.addEndpoint("/ws") // 웹소켓 연결 엔드포인트 설정. (ws://localhost:8080/ws)
                 .setAllowedOrigins("http://localhost:8080") // 웹소켓 요청이 들어오는 특정 도메인을 허용하기.
+                .setHandshakeHandler(new UserHandshakeHandler()) // 사용자별 메시지 전송을 위한 핸드쉐이커 등록.
                 .withSockJS(); // WebSocket을 지원하지 않는 구형 브라우저를 위한 풀백. (자동으로 롱 폴링 등으로 전환)
     }
 }
